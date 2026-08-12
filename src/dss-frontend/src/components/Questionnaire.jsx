@@ -78,7 +78,7 @@ export default function Questionnaire({ questions, answers, onAnswerChange }) {
               <option value="">Sélectionner</option>
               {question.scale.options.map((option) => (
                 <option key={option.value} value={option.value}>
-                  {option.value} — {option.label}
+                  {option.label}
                 </option>
               ))}
             </select>

@@ -1,23 +1,47 @@
-import logo from './logo.svg';
 import './App.css';
+import { useState } from 'react';
+import Questionnaire from './components/Questionnaire';
+import ConversationalUI from './components/ConversationalUI';
+import { questions } from './data/questions';
 
 function App() {
+  const [answers, setAnswers] = useState({});
+  const [mode, setMode] = useState('form');
+
+  const handleAnswerChange = (questionId, value) => {
+    setAnswers((current) => ({ ...current, [questionId]: value }));
+  };
+
   return (
     <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
+      <div className="mode-toggle" role="tablist">
+        <button
+          type="button"
+          className={mode === 'form' ? 'toggle active' : 'toggle'}
+          onClick={() => setMode('form')}
+          role="tab"
+          aria-selected={mode === 'form'}
         >
-          Learn React
-        </a>
-      </header>
+          Formulaire
+        </button>
+        <button
+          type="button"
+          className={mode === 'conversation' ? 'toggle active' : 'toggle'}
+          onClick={() => setMode('conversation')}
+          role="tab"
+          aria-selected={mode === 'conversation'}
+        >
+          Conversation
+        </button>
+      </div>
+
+      <div className="survey-container">
+        {mode === 'form' ? (
+          <Questionnaire questions={questions} answers={answers} onAnswerChange={handleAnswerChange} />
+        ) : (
+          <ConversationalUI questions={questions} answers={answers} onAnswerChange={handleAnswerChange} />
+        )}
+      </div>
     </div>
   );
 }
