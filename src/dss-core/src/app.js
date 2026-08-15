@@ -3,10 +3,10 @@ const { computeScores } = require('./modules/scoring');
 
 const app = express();
 
-app.use('/api/score', express.json());
+app.use(express.json());
 
 app.post('/api/score', (req, res) => {
-  res.json({ status: 'ok', response: computeScores(req.body) });
+  res.json({ status: 'ok', response: computeScores(req.body.responses ?? req.body) });
 });
 
 app.post('/api/chat', express.text({ type: '*/*' }), async (req, res) => {
@@ -29,5 +29,5 @@ app.post('/api/chat', express.text({ type: '*/*' }), async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
