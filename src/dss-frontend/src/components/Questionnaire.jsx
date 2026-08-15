@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 
-export default function Questionnaire({ questions, answers, onAnswerChange }) {
+export default function Questionnaire({ questions, answers, onAnswerChange, onSubmitSuccess }) {
   const [submitting, setSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState(null);
 
@@ -51,7 +51,9 @@ export default function Questionnaire({ questions, answers, onAnswerChange }) {
         throw new Error(text || `HTTP ${res.status}`);
       }
 
+      const data = await res.json();
       setStatusMessage('Submitted successfully.');
+      onSubmitSuccess?.(data);
     } catch (err) {
       setStatusMessage(`Submission failed: ${err.message}`);
     } finally {
