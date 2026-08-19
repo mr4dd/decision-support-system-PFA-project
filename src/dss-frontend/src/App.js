@@ -11,6 +11,13 @@ function normalizeScore(score, maxScore = 3) {
   return Math.max(0, Math.min(100, (numericScore / maxScore) * 100));
 }
 
+function normalizeSeverity(priority) {
+  const normalizedPriority = String(priority ?? '').toLowerCase();
+  if (normalizedPriority.includes('élev') || normalizedPriority.includes('high')) return 'high';
+  if (normalizedPriority.includes('faibl') || normalizedPriority.includes('low')) return 'low';
+  return 'medium';
+}
+
 function App() {
   const [answers, setAnswers] = useState({});
   const [mode, setMode] = useState('form');
@@ -22,7 +29,8 @@ function App() {
 
   const scoreCategories = useMemo(() => {
     if (!scoreResult) return [];
-    const categories = scoreResult.response?.categories ?? scoreResult.categories ?? {};
+    const scores = scoreResult.response?.scores ?? scoreResult.scores ?? scoreResult.response ?? scoreResult;
+    const categories = scores.categories ?? {};
     return Object.entries(categories).map(([name, category]) => ({
       name,
       score: normalizeScore(category?.score, category?.maxScore ?? 3),
@@ -31,8 +39,26 @@ function App() {
 
   const overallScore = useMemo(() => {
     if (!scoreResult) return 0;
-    const global = scoreResult.response?.global ?? scoreResult.global ?? {};
+    const scores = scoreResult.response?.scores ?? scoreResult.scores ?? scoreResult.response ?? scoreResult;
+    const global = scores.global ?? {};
     return normalizeScore(global?.score, global?.maxScore ?? 3);
+  }, [scoreResult]);
+
+  const recommendations = useMemo(() => {
+    if (!scoreResult) return [];
+    const rawRecommendations = scoreResult.response?.recs
+      ?? scoreResult.recs
+      ?? scoreResult.response?.recommendations
+      ?? scoreResult.recommendations
+      ?? [];
+
+    return Array.isArray(rawRecommendations)
+      ? rawRecommendations.map((recommendation) => ({
+        category: recommendation.category,
+        text: recommendation.text ?? recommendation.recommendation,
+        severity: recommendation.severity ?? normalizeSeverity(recommendation.priority),
+      }))
+      : [];
   }, [scoreResult]);
 
   if (scoreResult) {
@@ -44,7 +70,11 @@ function App() {
               Réévaluer
             </button>
           </div>
-          <SecuritySetupScore categories={scoreCategories} overallScore={overallScore} />
+          <SecuritySetupScore
+            categories={scoreCategories}
+            overallScore={overallScore}
+            recommendations={recommendations}
+          />
         </div>
       </div>
     );
@@ -82,7 +112,7 @@ function App() {
             onSubmitSuccess={setScoreResult}
           />
         ) : (
-          <ConversationalUI questions={questions} answers={answers} onAnswerChange={handleAnswerChange} />
+          <ConversationalUI onScoreResult={setScoreResult} />
         )}
       </div>
     </div>

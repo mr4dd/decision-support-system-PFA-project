@@ -20,6 +20,8 @@ const DEFAULT_WEIGHTS = {
   'rto-rpo': 0.07,
 };
 
+const logger = require('../logger');
+
 function riskLevel(score) {
   if (score < 1) return 'Critique';
   if (score < 1.5) return 'Élevé';
@@ -28,6 +30,10 @@ function riskLevel(score) {
 }
 
 function computeScores(answers, weights = DEFAULT_WEIGHTS) {
+  logger.debug('Scoring started', {
+    answerCount: Array.isArray(answers) ? answers.length : null,
+    weightCount: Object.keys(weights).length,
+  });
   const categories = {};
   let globalWeightedSum = 0;
   let globalWeightSum = 0;
@@ -63,7 +69,7 @@ function computeScores(answers, weights = DEFAULT_WEIGHTS) {
 
   const globalScore = globalWeightSum > 0 ? globalWeightedSum / globalWeightSum : null;
 
-  return {
+  const result = {
     global: {
       score: globalScore !== null ? Number(globalScore.toFixed(2)) : null,
       maxScore: 3,
@@ -71,6 +77,14 @@ function computeScores(answers, weights = DEFAULT_WEIGHTS) {
     },
     categories: categoryResults,
   };
+
+  logger.debug('Scoring completed', {
+    categoryCount: Object.keys(result.categories).length,
+    globalScore: result.global.score,
+    scoredAnswerCount: globalWeightSum > 0 ? answers.filter((answer) => answer.value !== null && answer.value !== undefined).length : 0,
+  });
+
+  return result;
 }
 
 module.exports = { computeScores, DEFAULT_WEIGHTS, riskLevel };
