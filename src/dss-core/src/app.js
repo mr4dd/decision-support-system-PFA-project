@@ -3,6 +3,7 @@ const { randomUUID } = require('crypto');
 require('dotenv').config();
 const { computeScores } = require('./modules/scoring');
 const { chat, extract } = require('./modules/AI');
+const { createUser, authenticate, createSession, getUserBySession, deleteSession } = require('./auth');
 const logger = require('./logger');
 
 const extraction_schema = {
@@ -43,7 +44,59 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
-app.post('/api/score', async (req, res) => {
+function parseCookies(cookieHeader = '') {
+  return Object.fromEntries(cookieHeader.split(';').filter(Boolean).map((cookie) => {
+    const separator = cookie.indexOf('=');
+    const name = separator >= 0 ? cookie.slice(0, separator).trim() : cookie.trim();
+    const value = separator >= 0 ? cookie.slice(separator + 1).trim() : '';
+    return [name, decodeURIComponent(value)];
+  }));
+}
+
+function setSessionCookie(res, token, maxAge) {
+  res.setHeader('Set-Cookie', `session=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`);
+}
+
+function requireAuth(req, res, next) {
+  const user = getUserBySession(parseCookies(req.get('cookie')).session);
+  if (!user) return res.status(401).json({ error: 'Authentication required' });
+  req.user = user;
+  return next();
+}
+
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const user = await createUser(req.body?.username, req.body?.password);
+    const session = createSession(user.id);
+    setSessionCookie(res, session.token, 7 * 24 * 60 * 60);
+    res.status(201).json({ user });
+  } catch (error) {
+    const statusCode = error.message === 'Username already exists' || error.message.endsWith('is required') ? 400 : 500;
+    res.status(statusCode).json({ error: statusCode === 500 ? 'Unable to create account' : error.message });
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  const user = await authenticate(req.body?.username, req.body?.password);
+  if (!user) return res.status(401).json({ error: 'Invalid username or password' });
+  const session = createSession(user.id);
+  setSessionCookie(res, session.token, 7 * 24 * 60 * 60);
+  return res.json({ user });
+});
+
+app.get('/api/auth/me', (req, res) => {
+  const user = getUserBySession(parseCookies(req.get('cookie')).session);
+  if (!user) return res.status(401).json({ error: 'Authentication required' });
+  return res.json({ user });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  deleteSession(parseCookies(req.get('cookie')).session);
+  setSessionCookie(res, '', 0);
+  return res.status(204).end();
+});
+
+app.post('/api/score', requireAuth, async (req, res) => {
   const requestId = req.requestId;
   const answers = req.body.responses ?? req.body;
   logger.info('Score calculation started', {
@@ -117,7 +170,7 @@ app.post('/api/score', async (req, res) => {
   }
 });
 
-app.post('/api/chat', async (req, res) => {
+app.post('/api/chat', requireAuth, async (req, res) => {
   const requestId = req.requestId;
   const message = req.body?.message;
   logger.info('Chat request received', {

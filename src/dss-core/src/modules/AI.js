@@ -134,7 +134,19 @@ async function extract(response_schema, scores = [], context = {}){
                         }]
             }
         )
-    };
+    } else {
+        history.push(
+            {
+                type: "user_input",
+                content: [
+                    {
+                        type: "text",
+                        text: "use the information you were provided to create structured output data."
+                    }
+                ]
+            }
+        )
+    }
 
     try {
         const interaction = await ai.interactions.create({

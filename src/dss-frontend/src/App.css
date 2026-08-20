@@ -18,9 +18,102 @@ body {
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
 }
 
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: linear-gradient(135deg, #f5f6f8 0%, #e7edf2 100%);
+}
+
+.auth-panel {
+  width: min(100%, 420px);
+  display: grid;
+  gap: 10px;
+  padding: 40px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: 0 18px 50px rgba(17, 24, 39, 0.08);
+}
+
+.auth-kicker {
+  margin: 0;
+  color: #2563eb;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.auth-panel h1 {
+  margin: 0;
+  font-size: 2rem;
+}
+
+.auth-intro {
+  margin: 0 0 18px;
+  color: var(--muted);
+}
+
+.auth-panel label {
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.auth-panel input {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font: inherit;
+}
+
+.auth-submit {
+  margin-top: 8px;
+  padding: 13px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: #2563eb;
+  color: white;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.auth-submit:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.auth-switch,
+.auth-logout {
+  border: 0;
+  background: transparent;
+  color: #2563eb;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.auth-error {
+  margin: 2px 0;
+  color: #b91c1c;
+  font-size: 0.88rem;
+}
+
 .App {
   min-height: 100vh;
   padding: 32px;
+}
+
+.app-header {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 16px;
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 .mode-toggle {

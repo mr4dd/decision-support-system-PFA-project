@@ -2,6 +2,7 @@
 
 # dependencies
 src/*/node_modules
+src/dss-core/data/
 /.pnp
 .pnp.js
 

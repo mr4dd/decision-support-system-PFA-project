@@ -1,8 +1,9 @@
 import './App.css';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Questionnaire from './components/Questionnaire';
 import ConversationalUI from './components/ConversationalUI';
 import SecuritySetupScore from './components/SecurityScore';
+import Login from './components/Login';
 import { questions } from './data/questions';
 
 function normalizeScore(score, maxScore = 3) {
@@ -19,9 +20,25 @@ function normalizeSeverity(priority) {
 }
 
 function App() {
+  const [user, setUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [answers, setAnswers] = useState({});
   const [mode, setMode] = useState('form');
   const [scoreResult, setScoreResult] = useState(null);
+
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => setUser(data?.user ?? null))
+      .catch(() => setUser(null))
+      .finally(() => setAuthChecked(true));
+  }, []);
+
+  async function handleLogout() {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    setUser(null);
+    setScoreResult(null);
+  }
 
   const handleAnswerChange = (questionId, value) => {
     setAnswers((current) => ({ ...current, [questionId]: value }));
@@ -61,14 +78,16 @@ function App() {
       : [];
   }, [scoreResult]);
 
+  if (!authChecked || !user) {
+    return <Login onAuthenticated={setUser} />;
+  }
+
   if (scoreResult) {
     return (
       <div className="App">
         <div className="survey-container">
           <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
-            <button type="button" className="conversation-submit" onClick={() => setScoreResult(null)}>
-              Réévaluer
-            </button>
+            <button type="button" className="conversation-submit" onClick={() => setScoreResult(null)}>Réévaluer</button>
           </div>
           <SecuritySetupScore
             categories={scoreCategories}
@@ -82,6 +101,10 @@ function App() {
 
   return (
     <div className="App">
+      <div className="app-header">
+        <span>{user.username}</span>
+        <button type="button" className="auth-logout" onClick={handleLogout}>Se déconnecter</button>
+      </div>
       <div className="mode-toggle" role="tablist">
         <button
           type="button"
