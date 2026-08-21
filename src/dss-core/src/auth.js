@@ -1,30 +1,15 @@
-const { randomBytes, scrypt: scryptCallback, timingSafeEqual } = require('crypto');
+const { createHash, randomBytes, scrypt: scryptCallback, timingSafeEqual } = require('crypto');
 const { promisify } = require('util');
-const fs = require('fs');
-const path = require('path');
-
-// using sqlite for testing, will migrate to mariaDB for prod
-const { DatabaseSync } = require('node:sqlite');
+const { pool } = require('./db');
 
 const scrypt = promisify(scryptCallback);
-const databasePath = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'auth.sqlite');
-fs.mkdirSync(path.dirname(databasePath), { recursive: true });
+const authSecret = process.env.AUTH_SECRET;
 
-const database = new DatabaseSync(databasePath);
-database.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
-    password_hash TEXT NOT NULL,
-    password_salt TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-  );
-  CREATE TABLE IF NOT EXISTS sessions (
-    token TEXT PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    expires_at INTEGER NOT NULL
-  );
-`);
+if (!authSecret) throw new Error('AUTH_SECRET is required');
+
+function hashSessionToken(token) {
+  return createHash('sha256').update(`${authSecret}:${token}`).digest('hex');
+}
 
 function validateCredentials(username, password) {
   if (typeof username !== 'string' || !username.trim()) return 'Username is required';
@@ -35,18 +20,18 @@ function validateCredentials(username, password) {
 async function createUser(username, password) {
   const validationError = validateCredentials(username, password);
   if (validationError) throw new Error(validationError);
-
   const normalizedUsername = username.trim();
   const salt = randomBytes(16);
   const passwordHash = await scrypt(password, salt, 64);
 
   try {
-    const result = database.prepare(
-      'INSERT INTO users (username, password_hash, password_salt) VALUES (?, ?, ?)'
-    ).run(normalizedUsername, passwordHash.toString('hex'), salt.toString('hex'));
-    return { id: Number(result.lastInsertRowid), username: normalizedUsername };
+    const [result] = await pool.execute(
+      'INSERT INTO users (username, password_hash, password_salt) VALUES (?, ?, ?)',
+      [normalizedUsername, passwordHash.toString('hex'), salt.toString('hex')]
+    );
+    return { id: Number(result.insertId), username: normalizedUsername };
   } catch (error) {
-    if (String(error.message).includes('UNIQUE')) throw new Error('Username already exists');
+    if (error.code === 'ER_DUP_ENTRY') throw new Error('Username already exists');
     throw error;
   }
 }
@@ -54,10 +39,11 @@ async function createUser(username, password) {
 async function authenticate(username, password) {
   const validationError = validateCredentials(username, password);
   if (validationError) return null;
-
-  const user = database.prepare(
-    'SELECT id, username, password_hash, password_salt FROM users WHERE username = ?'
-  ).get(username.trim());
+  const [rows] = await pool.execute(
+    'SELECT id, username, password_hash, password_salt FROM users WHERE username = ?',
+    [username.trim()]
+  );
+  const user = rows[0];
   if (!user) return null;
 
   const expectedHash = Buffer.from(user.password_hash, 'hex');
@@ -66,31 +52,31 @@ async function authenticate(username, password) {
   return { id: Number(user.id), username: user.username };
 }
 
-function createSession(userId) {
+async function createSession(userId) {
   const token = randomBytes(32).toString('hex');
   const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
-  database.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)')
-    .run(token, userId, expiresAt);
+  await pool.execute('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)', [hashSessionToken(token), userId, expiresAt]);
   return { token, expiresAt };
 }
 
-function getUserBySession(token) {
+async function getUserBySession(token) {
   if (!token) return null;
-  const session = database.prepare(`
+  const [rows] = await pool.execute(`
     SELECT users.id, users.username, sessions.expires_at
     FROM sessions JOIN users ON users.id = sessions.user_id
     WHERE sessions.token = ?
-  `).get(token);
+  `, [hashSessionToken(token)]);
+  const session = rows[0];
   if (!session) return null;
-  if (session.expires_at <= Date.now()) {
-    database.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+  if (Number(session.expires_at) <= Date.now()) {
+    await pool.execute('DELETE FROM sessions WHERE token = ?', [hashSessionToken(token)]);
     return null;
   }
   return { id: Number(session.id), username: session.username };
 }
 
-function deleteSession(token) {
-  if (token) database.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+async function deleteSession(token) {
+  if (token) await pool.execute('DELETE FROM sessions WHERE token = ?', [hashSessionToken(token)]);
 }
 
 module.exports = { createUser, authenticate, createSession, getUserBySession, deleteSession };

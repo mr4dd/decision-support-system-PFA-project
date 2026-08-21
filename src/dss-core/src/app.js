@@ -1,6 +1,7 @@
 const express = require('express');
 const { randomUUID } = require('crypto');
 require('dotenv').config();
+const { initializeDatabase } = require('./db');
 const { computeScores } = require('./modules/scoring');
 const { chat, extract } = require('./modules/AI');
 const { createUser, authenticate, createSession, getUserBySession, deleteSession } = require('./auth');
@@ -87,8 +88,8 @@ function setSessionCookie(res, token, maxAge) {
   res.setHeader('Set-Cookie', `session=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`);
 }
 
-function requireAuth(req, res, next) {
-  const user = getUserBySession(parseCookies(req.get('cookie')).session);
+async function requireAuth(req, res, next) {
+  const user = await getUserBySession(parseCookies(req.get('cookie')).session);
   if (!user) return res.status(401).json({ error: 'Authentication required' });
   req.user = user;
   return next();
@@ -97,7 +98,7 @@ function requireAuth(req, res, next) {
 app.post('/api/auth/register', async (req, res) => {
   try {
     const user = await createUser(req.body?.username, req.body?.password);
-    const session = createSession(user.id);
+    const session = await createSession(user.id);
     setSessionCookie(res, session.token, 7 * 24 * 60 * 60);
     res.status(201).json({ user });
   } catch (error) {
@@ -109,40 +110,40 @@ app.post('/api/auth/register', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
   const user = await authenticate(req.body?.username, req.body?.password);
   if (!user) return res.status(401).json({ error: 'Invalid username or password' });
-  const session = createSession(user.id);
+  const session = await createSession(user.id);
   setSessionCookie(res, session.token, 7 * 24 * 60 * 60);
   return res.json({ user });
 });
 
-app.get('/api/auth/me', (req, res) => {
-  const user = getUserBySession(parseCookies(req.get('cookie')).session);
+app.get('/api/auth/me', async (req, res) => {
+  const user = await getUserBySession(parseCookies(req.get('cookie')).session);
   if (!user) return res.status(401).json({ error: 'Authentication required' });
   return res.json({ user });
 });
 
-app.post('/api/auth/logout', (req, res) => {
-  deleteSession(parseCookies(req.get('cookie')).session);
+app.post('/api/auth/logout', async (req, res) => {
+  await deleteSession(parseCookies(req.get('cookie')).session);
   setSessionCookie(res, '', 0);
   return res.status(204).end();
 });
 
-app.get('/api/history', requireAuth, (req, res) => {
-  res.json({ scores: listAssessments(req.user.id), chats: listChats(req.user.id) });
+app.get('/api/history', requireAuth, async (req, res) => {
+  res.json({ scores: await listAssessments(req.user.id), chats: await listChats(req.user.id) });
 });
 
-app.get('/api/scores/:assessmentId', requireAuth, (req, res) => {
-  const assessment = getAssessment(req.user.id, req.params.assessmentId);
+app.get('/api/scores/:assessmentId', requireAuth, async (req, res) => {
+  const assessment = await getAssessment(req.user.id, req.params.assessmentId);
   if (!assessment) return res.status(404).json({ error: 'Score not found' });
   return res.json(assessment);
 });
 
-app.get('/api/chats/:chatId', requireAuth, (req, res) => {
-  const chatSession = getChat(req.user.id, req.params.chatId);
+app.get('/api/chats/:chatId', requireAuth, async (req, res) => {
+  const chatSession = await getChat(req.user.id, req.params.chatId);
   if (!chatSession) return res.status(404).json({ error: 'Chat not found' });
   return res.json(chatSession);
 });
 
-function getOrCreateChat(userId, chatId) {
+async function getOrCreateChat(userId, chatId) {
   if (chatId) return getChat(userId, chatId);
   return createChat(userId);
 }
@@ -165,7 +166,7 @@ app.post('/api/score', requireAuth, async (req, res) => {
     });
     const recommendations = await extract(recommendation_schema, scores);
 
-    const assessmentId = createAssessment(req.user.id, {
+    const assessmentId = await createAssessment(req.user.id, {
       source: 'form',
       answers,
       scores,
@@ -200,13 +201,13 @@ app.post('/api/chat', requireAuth, async (req, res) => {
   });
 
   try {
-    const chatSession = getOrCreateChat(req.user.id, req.body?.chatId);
+    const chatSession = await getOrCreateChat(req.user.id, req.body?.chatId);
     if (!chatSession) return res.status(404).json({ error: 'Chat not found' });
-    appendMessage(chatSession.id, req.user.id, 'user', message);
-    const currentChat = getChat(req.user.id, chatSession.id);
+    await appendMessage(chatSession.id, req.user.id, 'user', message);
+    const currentChat = await getChat(req.user.id, chatSession.id);
     if (message != "calculer") {
       const response = await chat(message, currentChat.messages.slice(0, -1), { requestId, chatId: chatSession.id });
-      appendMessage(chatSession.id, req.user.id, 'assistant', response);
+      await appendMessage(chatSession.id, req.user.id, 'assistant', response);
 
       logger.info('Chat response ready', {
         requestId,
@@ -227,7 +228,7 @@ app.post('/api/chat', requireAuth, async (req, res) => {
         { requestId, chatId: chatSession.id }
       );
 
-      const assessmentId = createAssessment(req.user.id, {
+      const assessmentId = await createAssessment(req.user.id, {
         source: 'chat',
         chatId: chatSession.id,
         answers: structured_data,
@@ -254,4 +255,9 @@ app.post('/api/chat', requireAuth, async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => logger.info('Server listening', { port: PORT, logLevel: process.env.LOG_LEVEL || 'info' }));
+initializeDatabase()
+  .then(() => app.listen(PORT, () => logger.info('Server listening', { port: PORT, logLevel: process.env.LOG_LEVEL || 'info' })))
+  .catch((error) => {
+    logger.error('Database initialization failed', logger.errorDetails(error));
+    process.exitCode = 1;
+  });
