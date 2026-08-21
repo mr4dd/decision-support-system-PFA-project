@@ -47,10 +47,21 @@ const SYSTEM_INSTRUCTION = `you are an expert cybersecurity assessment specialis
 `;
 
 function toInteractionHistory(messages = []) {
-    return messages.map((message) => ({
-        type: message.role === 'assistant' ? 'model_output' : 'user_input',
-        content: [{ type: 'text', text: String(message.text ?? message.content ?? '') }],
-    }));
+    if (!Array.isArray(messages)) {
+        return [];
+    }
+
+    return messages
+        .filter((message) => (
+            message &&
+            typeof message === 'object' &&
+            (message.role === 'assistant' || message.role === 'user') &&
+            (message.text !== undefined || message.content !== undefined)
+        ))
+        .map((message) => ({
+            type: message.role === 'assistant' ? 'model_output' : 'user_input',
+            content: [{ type: 'text', text: String(message.text ?? message.content ?? '') }],
+        }));
 }
 
 async function chat(message, messages = [], context = {}){
