@@ -30,6 +30,10 @@ function riskLevel(score) {
 }
 
 function computeScores(answers, weights = DEFAULT_WEIGHTS) {
+  if (!Array.isArray(answers)) {
+    throw new TypeError('Score responses must be an array');
+  }
+
   logger.debug('Scoring started', {
     answerCount: Array.isArray(answers) ? answers.length : null,
     weightCount: Object.keys(weights).length,

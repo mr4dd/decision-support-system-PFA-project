@@ -158,13 +158,20 @@ app.post('/api/score', requireAuth, async (req, res) => {
   });
 
   try {
+    if (!Array.isArray(answers)) {
+      return res.status(400).json({ error: 'responses must be an array' });
+    }
     const scores = computeScores(answers);
     logger.debug('Score calculation completed', {
       requestId,
       categoryCount: Object.keys(scores.categories).length,
       globalScore: scores.global.score,
     });
-    const recommendations = await extract(recommendation_schema, scores);
+    const recommendations = await extract(
+      recommendation_schema,
+      [{ role: 'user', text: JSON.stringify(scores) }],
+      { requestId }
+    );
 
     const assessmentId = await createAssessment(req.user.id, {
       source: 'form',
