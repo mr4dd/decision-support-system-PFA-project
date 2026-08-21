@@ -4,14 +4,44 @@ require('dotenv').config();
 const { computeScores } = require('./modules/scoring');
 const { chat, extract } = require('./modules/AI');
 const { createUser, authenticate, createSession, getUserBySession, deleteSession } = require('./auth');
+const {
+  createChat,
+  getChat,
+  listChats,
+  appendMessage,
+  createAssessment,
+  listAssessments,
+  getAssessment,
+} = require('./storage');
 const logger = require('./logger');
 
 const extraction_schema = {
-
-}
+  type: 'array',
+  items: {
+    type: 'object',
+    properties: {
+      id: { type: 'string' },
+      category: { type: 'string' },
+      criterion: { type: 'string' },
+      value: { type: 'integer' },
+      label: { type: 'string' },
+    },
+    required: ['id', 'category', 'criterion', 'value'],
+  },
+};
 const recommendation_schema = {
-
-}
+  type: 'array',
+  items: {
+    type: 'object',
+    properties: {
+      category: { type: 'string' },
+      criterion: { type: 'string' },
+      priority: { type: 'string' },
+      recommendation: { type: 'string' },
+    },
+    required: ['category', 'criterion', 'priority', 'recommendation'],
+  },
+};
 
 const app = express();
 
@@ -96,6 +126,27 @@ app.post('/api/auth/logout', (req, res) => {
   return res.status(204).end();
 });
 
+app.get('/api/history', requireAuth, (req, res) => {
+  res.json({ scores: listAssessments(req.user.id), chats: listChats(req.user.id) });
+});
+
+app.get('/api/scores/:assessmentId', requireAuth, (req, res) => {
+  const assessment = getAssessment(req.user.id, req.params.assessmentId);
+  if (!assessment) return res.status(404).json({ error: 'Score not found' });
+  return res.json(assessment);
+});
+
+app.get('/api/chats/:chatId', requireAuth, (req, res) => {
+  const chatSession = getChat(req.user.id, req.params.chatId);
+  if (!chatSession) return res.status(404).json({ error: 'Chat not found' });
+  return res.json(chatSession);
+});
+
+function getOrCreateChat(userId, chatId) {
+  if (chatId) return getChat(userId, chatId);
+  return createChat(userId);
+}
+
 app.post('/api/score', requireAuth, async (req, res) => {
   const requestId = req.requestId;
   const answers = req.body.responses ?? req.body;
@@ -112,55 +163,20 @@ app.post('/api/score', requireAuth, async (req, res) => {
       categoryCount: Object.keys(scores.categories).length,
       globalScore: scores.global.score,
     });
-    // mock recommendations for testing to not hammer API
-    const recommendations = [{
-      "category": "Identifier",
-      "criterion": "asset-inventory",
-      "priority": "Élevée",
-      "recommendation": "Mettre en place un inventaire centralisé et automatisé des équipements et logiciels (outil de type CMDB ou solution de découverte réseau) afin de garantir une mise à jour continue."
-    },
-    {
-      "category": "Identifier",
-      "criterion": "patch-management",
-      "priority": "Élevée",
-      "recommendation": "Formaliser un processus régulier de gestion des correctifs, idéalement automatisé (WSUS, gestionnaire de patchs), avec suivi des délais d'application selon la criticité des vulnérabilités."
-    },
-    {
-      "category": "Identifier",
-      "criterion": "third-party-risk",
-      "priority": "Modérée",
-      "recommendation": "Structurer une évaluation systématique des prestataires critiques (questionnaire de sécurité, clauses contractuelles) plutôt qu'une appréciation informelle."
-    },
-    {
-      "category": "Protéger",
-      "criterion": "passwords",
-      "priority": "Modérée",
-      "recommendation": "Formaliser et faire appliquer une politique de mots de passe (longueur, complexité, unicité, gestionnaire de mots de passe) plutôt que de s'appuyer sur des pratiques informelles."
-    },
-    {
-      "category": "Protéger",
-      "criterion": "mfa",
-      "priority": "Élevée",
-      "recommendation": "Étendre l'authentification multi-facteurs au-delà des comptes administrateurs, en priorité aux accès distants, messagerie et applications sensibles."
-    },
-    {
-      "category": "Répondre",
-      "criterion": "breach-notification",
-      "priority": "Élevée",
-      "recommendation": "Créer une procédure de notification en cas d'incident (obligations CNIL/RGPD, information des clients) précisant les délais, responsables et modèles de communication."
-    },
-    {
-      "category": "Récupérer",
-      "criterion": "bcp-drp",
-      "priority": "Modérée",
-      "recommendation": "Documenter le plan de continuité et de reprise d'activité (PCA/PRA) et prévoir un premier exercice de test pour valider sa faisabilité."
-    }]//await extract(recommendation_schema, scores);
+    const recommendations = await extract(recommendation_schema, scores);
+
+    const assessmentId = createAssessment(req.user.id, {
+      source: 'form',
+      answers,
+      scores,
+      recommendations,
+    });
 
     logger.info('Score response ready', {
       requestId,
       recommendationCount: Array.isArray(recommendations) ? recommendations.length : null,
     });
-    res.json({ status: 'ok', response: {scores: scores, recs: recommendations} });
+    res.json({ status: 'ok', assessmentId, response: {scores: scores, recs: recommendations} });
   } catch (err) {
     logger.error('Score request failed', {
       requestId,
@@ -173,6 +189,9 @@ app.post('/api/score', requireAuth, async (req, res) => {
 app.post('/api/chat', requireAuth, async (req, res) => {
   const requestId = req.requestId;
   const message = req.body?.message;
+  if (typeof message !== 'string' || !message.trim()) {
+    return res.status(400).json({ error: 'Message is required' });
+  }
   logger.info('Chat request received', {
     requestId,
     messageType: typeof message,
@@ -181,23 +200,40 @@ app.post('/api/chat', requireAuth, async (req, res) => {
   });
 
   try {
+    const chatSession = getOrCreateChat(req.user.id, req.body?.chatId);
+    if (!chatSession) return res.status(404).json({ error: 'Chat not found' });
+    appendMessage(chatSession.id, req.user.id, 'user', message);
+    const currentChat = getChat(req.user.id, chatSession.id);
     if (message != "calculer") {
-      const response = await chat(message, { requestId });
+      const response = await chat(message, currentChat.messages.slice(0, -1), { requestId, chatId: chatSession.id });
+      appendMessage(chatSession.id, req.user.id, 'assistant', response);
 
       logger.info('Chat response ready', {
         requestId,
         responseLength: typeof response === 'string' ? response.length : null,
       });
-      res.json({status: 'ok', response: response, type: 'chat'})
+      res.json({ status: 'ok', chatId: chatSession.id, response, type: 'chat' });
     } else {
       logger.info('Chat scoring started', { requestId });
-      const structured_data = await extract(extraction_schema, [], { requestId });
+      const structured_data = await extract(extraction_schema, currentChat.messages, { requestId, chatId: chatSession.id });
       const scores = computeScores(structured_data);
       logger.debug('Chat scoring data extracted', {
         requestId,
         answerCount: Array.isArray(structured_data) ? structured_data.length : null,
       });
-      const recommendations = await extract(recommendation_schema, [], { requestId });
+      const recommendations = await extract(
+        recommendation_schema,
+        [...currentChat.messages, { role: 'user', text: JSON.stringify(scores) }],
+        { requestId, chatId: chatSession.id }
+      );
+
+      const assessmentId = createAssessment(req.user.id, {
+        source: 'chat',
+        chatId: chatSession.id,
+        answers: structured_data,
+        scores,
+        recommendations,
+      });
 
       logger.info('Chat scoring completed', {
         requestId,
@@ -205,7 +241,7 @@ app.post('/api/chat', requireAuth, async (req, res) => {
         globalScore: scores.global.score,
         recommendationCount: Array.isArray(recommendations) ? recommendations.length : null,
       });
-      res.json({status: 'ok', response: {scores: scores, recs: recommendations}, type: 'score'})
+      res.json({ status: 'ok', chatId: chatSession.id, assessmentId, response: {scores, recs: recommendations}, type: 'score' });
     }
   } catch (err) {
     logger.error('Chat request failed', {

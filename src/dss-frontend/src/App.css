@@ -88,12 +88,19 @@ body {
 }
 
 .auth-switch,
-.auth-logout {
+.auth-logout,
+.auth-profile {
   border: 0;
   background: transparent;
   color: #2563eb;
   cursor: pointer;
   font-weight: 600;
+}
+
+.auth-profile {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
 }
 
 .auth-error {
@@ -114,6 +121,75 @@ body {
   gap: 16px;
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.history-page {
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+.history-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.history-heading h1 {
+  margin: 6px 0 0;
+  font-size: 2rem;
+}
+
+.history-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.history-section {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.history-section h2 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+
+.history-item {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 16px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.history-item:hover {
+  border-color: #2563eb;
+}
+
+.history-item span,
+.history-item small,
+.history-empty {
+  color: var(--muted);
+}
+
+.history-item strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.95rem;
+}
+
+.history-item small {
+  font-size: 0.78rem;
 }
 
 .mode-toggle {
@@ -298,6 +374,10 @@ body {
 
 @media (max-width: 920px) {
   .question-row {
+    grid-template-columns: 1fr;
+  }
+
+  .history-grid {
     grid-template-columns: 1fr;
   }
 }

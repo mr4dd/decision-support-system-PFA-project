@@ -4,6 +4,7 @@ import Questionnaire from './components/Questionnaire';
 import ConversationalUI from './components/ConversationalUI';
 import SecuritySetupScore from './components/SecurityScore';
 import Login from './components/Login';
+import Profile from './components/Profile';
 import { questions } from './data/questions';
 
 function normalizeScore(score, maxScore = 3) {
@@ -25,6 +26,9 @@ function App() {
   const [answers, setAnswers] = useState({});
   const [mode, setMode] = useState('form');
   const [scoreResult, setScoreResult] = useState(null);
+  const [activeChatId, setActiveChatId] = useState(null);
+  const [view, setView] = useState('assessment');
+  const [history, setHistory] = useState(null);
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -38,6 +42,28 @@ function App() {
     await fetch('/api/auth/logout', { method: 'POST' });
     setUser(null);
     setScoreResult(null);
+  }
+
+  async function openProfile() {
+    const response = await fetch('/api/history');
+    if (!response.ok) return;
+    setHistory(await response.json());
+    setView('profile');
+  }
+
+  async function openScore(assessmentId) {
+    const response = await fetch(`/api/scores/${assessmentId}`);
+    if (!response.ok) return;
+    const assessment = await response.json();
+    setScoreResult({ response: { scores: assessment.scores, recs: assessment.recommendations }, assessmentId });
+    setView('assessment');
+  }
+
+  function openChat(chatId) {
+    setActiveChatId(chatId);
+    setScoreResult(null);
+    setMode('conversation');
+    setView('assessment');
   }
 
   const handleAnswerChange = (questionId, value) => {
@@ -82,9 +108,18 @@ function App() {
     return <Login onAuthenticated={setUser} />;
   }
 
+  if (view === 'profile') {
+    return <div className="App"><Profile history={history} onOpenScore={openScore} onOpenChat={openChat} onBack={() => setView('assessment')} /></div>;
+  }
+
   if (scoreResult) {
     return (
       <div className="App">
+        <div className="app-header">
+          <span>{user.username}</span>
+          <button type="button" className="auth-profile" onClick={openProfile}>Profil</button>
+          <button type="button" className="auth-logout" onClick={handleLogout}>Se déconnecter</button>
+        </div>
         <div className="survey-container">
           <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
             <button type="button" className="conversation-submit" onClick={() => setScoreResult(null)}>Réévaluer</button>
@@ -103,6 +138,7 @@ function App() {
     <div className="App">
       <div className="app-header">
         <span>{user.username}</span>
+        <button type="button" className="auth-profile" onClick={openProfile}>Profil</button>
         <button type="button" className="auth-logout" onClick={handleLogout}>Se déconnecter</button>
       </div>
       <div className="mode-toggle" role="tablist">
@@ -135,7 +171,11 @@ function App() {
             onSubmitSuccess={setScoreResult}
           />
         ) : (
-          <ConversationalUI onScoreResult={setScoreResult} />
+          <ConversationalUI
+            chatId={activeChatId}
+            onChatIdChange={setActiveChatId}
+            onScoreResult={setScoreResult}
+          />
         )}
       </div>
     </div>

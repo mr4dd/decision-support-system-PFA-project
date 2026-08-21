@@ -46,28 +46,16 @@ const SYSTEM_INSTRUCTION = `you are an expert cybersecurity assessment specialis
     INSTRUCTION FOR LLM: For each criterion, ask the user a targeted question to determine which of the 4 maturity levels (0-3) applies, then record the value. Do not skip categories.
 `;
 
-const history = [{
-    type: "model_output",
-    content: [
-        {
-            type: "text",
-            text: `Bonjour ! Je vais vous poser quelques questions simples pour évaluer le niveau de maturité de votre entreprise en matière de cybersécurité. Pas besoin de connaissances techniques, répondez simplement selon ce que vous savez de votre organisation.
+function toInteractionHistory(messages = []) {
+    return messages.map((message) => ({
+        type: message.role === 'assistant' ? 'model_output' : 'user_input',
+        content: [{ type: 'text', text: String(message.text ?? message.content ?? '') }],
+    }));
+}
 
-On va regrouper les questions en 5 grands thèmes :
-
-Gouvernance — Avez-vous une politique de sécurité, une gestion des risques, et des responsabilités clairement définies ?
-Connaissance de votre environnement — Savez-vous quels équipements/logiciels vous utilisez, comment vous gérez les mises à jour, et les risques liés à vos prestataires ?
-Protection au quotidien — Mots de passe, double authentification, gestion des accès, chiffrement des données, sensibilisation des équipes.
-Détection des menaces — Supervision de vos systèmes et protection antivirus.
-Réponse aux incidents et reprise d'activité — Plan en cas d'incident, sauvegardes, et capacité à redémarrer après un problème.
-
-On commence par la gouvernance ?`
-        }
-    ]
-}];
-
-async function chat(message, context = {}){
+async function chat(message, messages = [], context = {}){
     const startedAt = process.hrtime.bigint();
+    const history = toInteractionHistory(messages);
     logger.debug("AI chat started", {
         ...context,
         messageLength: typeof message === "string" ? message.length : null,
@@ -92,12 +80,11 @@ async function chat(message, context = {}){
         });
 
         const response = interaction.steps.at(-1).content[0].text;
-        history.push(...interaction.steps);
         logger.info("AI chat completed", {
             ...context,
             durationMs: Number((Number(process.hrtime.bigint() - startedAt) / 1e6).toFixed(2)),
             responseLength: response.length,
-            historyLengthAfter: history.length,
+            historyLengthAfter: history.length + interaction.steps.length,
         });
         return response;
     } catch (error) {
@@ -106,12 +93,13 @@ async function chat(message, context = {}){
     }
 }
 
-async function extract(response_schema, scores = [], context = {}){
+async function extract(response_schema, messages = [], context = {}){
     const startedAt = process.hrtime.bigint();
+    const history = toInteractionHistory(messages);
     logger.debug("AI extraction started", {
         ...context,
         schemaKeyCount: Object.keys(response_schema).length,
-        scoresProvided: scores.length > 0,
+        messagesProvided: messages.length > 0,
         historyLengthBefore: history.length,
     });
 
@@ -121,32 +109,10 @@ async function extract(response_schema, scores = [], context = {}){
         schema: response_schema
     }
 
-    if (history.length === 1) {
-        if (scores.length === 0) {
-            return {}
-        }
-        history.push(
-            {
-                type: "user_input",
-                content: [{
-                            type: "text",
-                            text: scores
-                        }]
-            }
-        )
-    } else {
-        history.push(
-            {
-                type: "user_input",
-                content: [
-                    {
-                        type: "text",
-                        text: "use the information you were provided to create structured output data."
-                    }
-                ]
-            }
-        )
-    }
+    history.push({
+        type: "user_input",
+        content: [{ type: "text", text: "use the information you were provided to create structured output data." }]
+    });
 
     try {
         const interaction = await ai.interactions.create({
@@ -170,4 +136,4 @@ async function extract(response_schema, scores = [], context = {}){
     }
 }
 
-module.exports = { chat, extract };
+module.exports = { chat, extract, toInteractionHistory };

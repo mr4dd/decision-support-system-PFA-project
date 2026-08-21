@@ -15,7 +15,7 @@ const INITIAL_MESSAGE = {
   On commence par la gouvernance ?`,
 };
 
-export default function ConversationalUI({ onScoreResult }) {
+export default function ConversationalUI({ chatId, onChatIdChange, onScoreResult }) {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState([INITIAL_MESSAGE]);
   const [isSending, setIsSending] = useState(false);
@@ -28,6 +28,27 @@ export default function ConversationalUI({ onScoreResult }) {
     chatEndRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
   }, [messages]);
 
+  useEffect(() => {
+    if (!chatId) {
+      setMessages([INITIAL_MESSAGE]);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setError(null);
+    fetch(`/api/chats/${chatId}`)
+      .then((response) => {
+        if (!response.ok) throw new Error('Impossible de charger la conversation.');
+        return response.json();
+      })
+      .then((data) => {
+        if (!cancelled) setMessages(data.messages?.length ? data.messages : [INITIAL_MESSAGE]);
+      })
+      .catch((loadError) => { if (!cancelled) setError(loadError.message); });
+
+    return () => { cancelled = true; };
+  }, [chatId]);
+
 
 
   const sendMessage = async (message) => {
@@ -39,15 +60,17 @@ export default function ConversationalUI({ onScoreResult }) {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message, ...(chatId ? { chatId } : {}) }),
       });
       const data = await response.json();
 
       if (!response.ok) throw new Error(data.error || 'Impossible de contacter le serveur.');
 
       if (data.type === 'score') {
+        onChatIdChange?.(data.chatId);
         onScoreResult?.(data);
       } else if (data.response) {
+        onChatIdChange?.(data.chatId);
         setMessages((current) => [...current, { role: 'assistant', text: data.response }]);
       }
     } catch (requestError) {
